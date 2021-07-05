@@ -8,6 +8,8 @@ from PyQt5.QtCore import Qt
 import cv2
 from glob import glob
 import os
+from utils.dataset import scale_bbox
+from utils.image_process import find_three_point, find_angle_from_three_point
 
 
 class UI(QMainWindow):
@@ -26,9 +28,16 @@ class UI(QMainWindow):
         self.label_num_image = self.findChild(QLabel, "label_num_image")
         self.label_num_card = self.findChild(QLabel, "label_num_card")
         self.label_process = self.findChild(QLabel, "label_process")
+        self.width_img_org = 0
+        self.height_img_org = 0
+        self.ratio_width = 0
+        self.ratio_height = 0
+        self.img_org = None
 
         self.label_show = self.findChild(QLabel, "label_show")
         print(self.label_show.frameSize())
+        self.width_show = 1280
+        self.height_show = 720
 
         self.pix, self.arr_image, self.name_image = self.show_image_to_qlabel('./image/background.jpg')
 
@@ -42,6 +51,8 @@ class UI(QMainWindow):
         self.pushButton_next.clicked.connect(self.show_image_next)
         self.idx = 0
         self.bbox_idx = []
+        self.bbox_no_rotate = []
+        self.angle_rotate = 0
 
         # Button load folder card
         self.list_card = []
@@ -53,7 +64,7 @@ class UI(QMainWindow):
         self.pushButton_paster_card.clicked.connect(self.paster_card_to_image)
 
         # Button load folder save
-        self.folder_save_data = "/home/vuong/Pictures/Data_HDV"
+        self.folder_save_data = "./Data_HDV"
         self.pushButton_select_folder_save_data = self.findChild(QPushButton, "pushButton_select_folder_save_data")
         self.pushButton_select_folder_save_data.clicked.connect(self.open_folder_save_data)
 
@@ -85,7 +96,13 @@ class UI(QMainWindow):
     def show_image_to_qlabel(self, path_image):
         arr_image = cv2.imread(path_image)
         # arr_image = cv2.cvtColor(arr_image, cv2.COLOR_BGR2RGB)
-        arr_image = cv2.resize(arr_image, (1280, 720), interpolation=cv2.INTER_AREA)
+        self.width_img_org = arr_image.shape[1]
+        self.height_img_org = arr_image.shape[0]
+        self.img_org = arr_image
+        self.ratio_width = self.width_img_org / self.width_show
+        self.ratio_height = self.height_img_org / self.height_show
+
+        arr_image = cv2.resize(arr_image, (self.width_show, self.height_show), interpolation=cv2.INTER_AREA)
         height, width, channel = arr_image.shape
         self.label_show.setFixedWidth(width)
         self.label_show.setFixedHeight(height)
@@ -101,24 +118,49 @@ class UI(QMainWindow):
         return pix_map, arr_image, name_image
 
     def get_pixel(self, event):
-        x = event.pos().x()
-        y = event.pos().y()
-        print(x, y)
+        print(self.bbox_idx[self.idx])
+        if len(self.bbox_idx[self.idx]) < 5:
+            x = event.pos().x()
+            y = event.pos().y()
 
-        # check anh hien tai da ve chua neu ve roi thi add them diem thu 2, nguoc lai tao diem dau tien.
-        if len(self.bbox_idx[self.idx]) == 3 and (self.idx == self.bbox_idx[self.idx][0]):
-            if len(self.bbox_idx[self.idx]) < 5:
-                self.bbox_idx[self.idx].append(x)
-                self.bbox_idx[self.idx].append(y)
-                bbox_xyxy = self.bbox_idx[self.idx]
-                self.draw_line(bbox_xyxy[1], bbox_xyxy[2], bbox_xyxy[1], bbox_xyxy[4])  # |
-                self.draw_line(bbox_xyxy[1], bbox_xyxy[4], bbox_xyxy[3], bbox_xyxy[4])  # |_
-                self.draw_line(bbox_xyxy[3], bbox_xyxy[4], bbox_xyxy[3], bbox_xyxy[2])  # |_|
-                self.draw_line(bbox_xyxy[3], bbox_xyxy[2], bbox_xyxy[1], bbox_xyxy[2])  # |_|
+            # check anh hien tai da ve chua neu ve roi thi add them diem thu 2, nguoc lai tao diem dau tien.
+            if len(self.bbox_idx[self.idx]) >= 2 and (self.idx == self.bbox_idx[self.idx][0]):
+                if len(self.bbox_idx[self.idx]) < 4:
+                    self.bbox_idx[self.idx].append((x, y))
+                    if len(self.bbox_idx[self.idx]) == 4:
+                        bbox_xyxy = self.bbox_idx[self.idx]
+                        x_extra = bbox_xyxy[3][0] - bbox_xyxy[2][0]
+                        y_extra = bbox_xyxy[2][1] - bbox_xyxy[1][1]
+                        x4 = bbox_xyxy[1][0] + x_extra
+                        y4 = bbox_xyxy[3][1] - y_extra
+                        self.bbox_idx[self.idx].append((x4, y4))
+
+                        self.bbox_no_rotate = [min(bbox_xyxy[1][0], bbox_xyxy[4][0]), min(bbox_xyxy[1][1], bbox_xyxy[2][1]),
+                                               max(bbox_xyxy[2][0], bbox_xyxy[3][0]), max(bbox_xyxy[3][1], bbox_xyxy[4][1])]
+
+                        self.draw_line(bbox_xyxy[1][0], bbox_xyxy[1][1], bbox_xyxy[2][0], bbox_xyxy[2][1])  # |
+                        self.draw_line(bbox_xyxy[2][0], bbox_xyxy[2][1], bbox_xyxy[3][0], bbox_xyxy[3][1])  # |_
+                        self.draw_line(bbox_xyxy[3][0], bbox_xyxy[3][1], bbox_xyxy[4][0], bbox_xyxy[4][1])  # |_|
+                        self.draw_line(bbox_xyxy[4][0], bbox_xyxy[4][1], bbox_xyxy[1][0], bbox_xyxy[1][1])  # |_|
+
+                        # draw line bbox no rotate
+                        self.draw_line(self.bbox_no_rotate[0], self.bbox_no_rotate[1], self.bbox_no_rotate[2], self.bbox_no_rotate[1])
+                        self.draw_line(self.bbox_no_rotate[2], self.bbox_no_rotate[1], self.bbox_no_rotate[2], self.bbox_no_rotate[3])
+                        self.draw_line(self.bbox_no_rotate[2], self.bbox_no_rotate[3], self.bbox_no_rotate[0], self.bbox_no_rotate[3])
+                        self.draw_line(self.bbox_no_rotate[0], self.bbox_no_rotate[3], self.bbox_no_rotate[0], self.bbox_no_rotate[1])
+
+                        # find angle rotate
+                        a, b, c = find_three_point(self.bbox_no_rotate, [bbox_xyxy[1][0], bbox_xyxy[1][1],
+                                                                         bbox_xyxy[4][0], bbox_xyxy[4][1]])
+                        self.angle_rotate = find_angle_from_three_point(a, b, c)
+                        print(self.angle_rotate)
+
+            else:
+                self.bbox_idx[self.idx].append((x, y))
+            self.draw_point(x, y)
         else:
-            self.bbox_idx[self.idx].append(x)
-            self.bbox_idx[self.idx].append(y)
-        self.draw_point(x, y)
+            QMessageBox.warning(self, "Warning",
+                                "Image draw enough point")
 
     def draw_point(self, x, y):
         qp = QPainter(self.pix)
@@ -140,6 +182,7 @@ class UI(QMainWindow):
         dir_ = QFileDialog.getExistingDirectory(None, 'Select project folder:', '/home/',
                                                 QFileDialog.ShowDirsOnly)
         self.list_image_show = glob(dir_ + "/*")
+        self.list_image_show = sorted(self.list_image_show)
         if len(self.list_image_show) == 0:
             QMessageBox.warning(self, "Warning",
                                 "Directory is no any image")
@@ -156,6 +199,7 @@ class UI(QMainWindow):
         dir_ = QFileDialog.getExistingDirectory(None, 'Select project folder:', '/home/',
                                                 QFileDialog.ShowDirsOnly)
         self.list_card = glob(dir_ + "/*")
+        self.list_card = sorted(self.list_card)
         if len(self.list_card) == 0:
             QMessageBox.warning(self, "Warning",
                                 "Directory is no any card")
@@ -213,12 +257,13 @@ class UI(QMainWindow):
                                     "No bbox in image")
                 sys.exit(0)
             bbox_xyxy = self.bbox_idx[self.idx]
-            width_small = bbox_xyxy[3] - bbox_xyxy[1]
-            height_small = bbox_xyxy[4] - bbox_xyxy[2]
+            bbox_xyxy_org = scale_bbox(bbox_xyxy, self.ratio_width, self. ratio_height)
+            width_small = bbox_xyxy_org[3] - bbox_xyxy_org[1]
+            height_small = bbox_xyxy_org[4] - bbox_xyxy_org[2]
             small_image = cv2.resize(small_image, (width_small, height_small), interpolation=cv2.INTER_AREA)
 
-            large_image = self.arr_image
-            large_image[bbox_xyxy[2]:bbox_xyxy[4], bbox_xyxy[1]:bbox_xyxy[3]] = small_image
+            large_image = self.img_org
+            large_image[bbox_xyxy_org[2]:bbox_xyxy_org[4], bbox_xyxy_org[1]:bbox_xyxy_org[3]] = small_image
             file_save = path_save_image_combine + "/" + self.name_image + "_" + \
                         self.list_card[idx].split("/")[-1].split(".")[0] + ".jpg"
             cv2.imwrite(file_save, large_image)
@@ -268,7 +313,7 @@ class UI(QMainWindow):
     def show_image_result_to_qlabel(self, path_image):
         arr_image = cv2.imread(path_image)
         # arr_image = cv2.cvtColor(arr_image, cv2.COLOR_BGR2RGB)
-        arr_image = cv2.resize(arr_image, (1280, 720), interpolation=cv2.INTER_AREA)
+        arr_image = cv2.resize(arr_image, (self.width_show, self.height_show), interpolation=cv2.INTER_AREA)
         height, width, channel = arr_image.shape
         self.label_show_result.setFixedWidth(width)
         self.label_show_result.setFixedHeight(height)

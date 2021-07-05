@@ -1,3 +1,7 @@
+# Install
+conda create 
+pip install opencv-python-headless
+
 # Tool for generate more data from small data
 
 ## Tool ghép thẻ HDV vào bao thẻ
