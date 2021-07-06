@@ -9,7 +9,7 @@ import cv2
 from glob import glob
 import os
 from utils.dataset import scale_bbox
-from utils.image_process import find_three_point, find_angle_from_three_point
+from utils.image_process import find_three_point, find_angle_from_three_point, rotate_image
 
 
 class UI(QMainWindow):
@@ -152,6 +152,9 @@ class UI(QMainWindow):
                         # find angle rotate
                         a, b, c = find_three_point(self.bbox_no_rotate, [bbox_xyxy[1][0], bbox_xyxy[1][1],
                                                                          bbox_xyxy[4][0], bbox_xyxy[4][1]])
+                        self.draw_point(a[0], a[1], color=Qt.blue)  # a xanh duong
+                        self.draw_point(b[0], b[1], color=Qt.yellow)  # b vang
+                        self.draw_point(c[0], c[1], color=Qt.green)  # c xanh la
                         self.angle_rotate = find_angle_from_three_point(a, b, c)
                         print(self.angle_rotate)
 
@@ -162,9 +165,9 @@ class UI(QMainWindow):
             QMessageBox.warning(self, "Warning",
                                 "Image draw enough point")
 
-    def draw_point(self, x, y):
+    def draw_point(self, x, y, color=Qt.red):
         qp = QPainter(self.pix)
-        pen = QPen(Qt.red, 10)
+        pen = QPen(color, 10)
         qp.setPen(pen)
         qp.drawPoint(x, y)
         qp.end()
@@ -261,6 +264,8 @@ class UI(QMainWindow):
             width_small = bbox_xyxy_org[3] - bbox_xyxy_org[1]
             height_small = bbox_xyxy_org[4] - bbox_xyxy_org[2]
             small_image = cv2.resize(small_image, (width_small, height_small), interpolation=cv2.INTER_AREA)
+
+            rotate_image(image_arr=small_image, angle=self.angle_rotate)
 
             large_image = self.img_org
             large_image[bbox_xyxy_org[2]:bbox_xyxy_org[4], bbox_xyxy_org[1]:bbox_xyxy_org[3]] = small_image
