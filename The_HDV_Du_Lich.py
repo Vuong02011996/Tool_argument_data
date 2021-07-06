@@ -1,5 +1,5 @@
 import sys
-
+from matplotlib import pyplot as plt
 from PyQt5.QtWidgets import QApplication,QTabWidget, \
     QWidget, QComboBox, QLabel, QMainWindow, QVBoxLayout, QHBoxLayout, QFileDialog, QPushButton, QMessageBox
 from PyQt5.QtGui import QImage, QPixmap, QColor, QPainter, QPen
@@ -8,8 +8,9 @@ from PyQt5.QtCore import Qt
 import cv2
 from glob import glob
 import os
-from utils.dataset import scale_bbox
+from utils.dataset import scale_bbox_5_point, scale_bbox_xyxy
 from utils.image_process import find_three_point, find_angle_from_three_point, rotate_image
+import numpy as np
 
 
 class UI(QMainWindow):
@@ -259,16 +260,34 @@ class UI(QMainWindow):
                 QMessageBox.warning(self, "Warning",
                                     "No bbox in image")
                 sys.exit(0)
-            bbox_xyxy = self.bbox_idx[self.idx]
-            bbox_xyxy_org = scale_bbox(bbox_xyxy, self.ratio_width, self. ratio_height)
-            width_small = bbox_xyxy_org[3] - bbox_xyxy_org[1]
-            height_small = bbox_xyxy_org[4] - bbox_xyxy_org[2]
-            small_image = cv2.resize(small_image, (width_small, height_small), interpolation=cv2.INTER_AREA)
-
-            rotate_image(image_arr=small_image, angle=self.angle_rotate)
-
+            # rotated image
+            rotated_img = rotate_image(image_arr=small_image, angle=self.angle_rotate)
+            # scale bbox no rotate to size image origin
+            bbox_no_rotate_org = scale_bbox_xyxy(self.bbox_no_rotate, self.ratio_width, self.ratio_height)
+            # scale card to size of bbox no rotate
+            width_small = bbox_no_rotate_org[2] - bbox_no_rotate_org[0]
+            height_small = bbox_no_rotate_org[3] - bbox_no_rotate_org[1]
+            rotated_small_img = cv2.resize(rotated_img, (width_small, height_small), interpolation=cv2.INTER_AREA)
             large_image = self.img_org
-            large_image[bbox_xyxy_org[2]:bbox_xyxy_org[4], bbox_xyxy_org[1]:bbox_xyxy_org[3]] = small_image
+
+            alpha_img = np.zeros((width_small, height_small, 1))
+            # tu_giac = np.array([[[240, 130], [380, 230], [190, 280]]], np.int32)
+            tu_giac = np.array([self.bbox_idx[self.idx][1], self.bbox_idx[self.idx][2], self.bbox_idx[self.idx][3], self.bbox_idx[self.idx][4]], dtype=np.int32)
+            tu_giac = tu_giac.reshape((-1, 1, 2))
+            alpha_img = cv2.polylines(alpha_img, [tu_giac], True, (255, 255, 255), thickness=-1)
+
+            alpha_s = cv2.blur(alpha_img, (3, 3))
+
+            # rotated_small_img = cv2.cvtColor(rotated_small_img, cv2.COLOR_RGB2RGBA)
+            # alpha_s = rotated_small_img[:, :, 3] / 255.0
+            alpha_l = 1.0 - alpha_s
+
+            for c in range(0, 3):
+                large_image[bbox_no_rotate_org[1]:bbox_no_rotate_org[3], bbox_no_rotate_org[0]:bbox_no_rotate_org[2], c] = (alpha_s * rotated_small_img[:, :, c] +
+                                          alpha_l * large_image[bbox_no_rotate_org[1]:bbox_no_rotate_org[3], bbox_no_rotate_org[0]:bbox_no_rotate_org[2], c])
+
+            # large_image[bbox_no_rotate_org[1]:bbox_no_rotate_org[3], bbox_no_rotate_org[0]:bbox_no_rotate_org[2]] = rotated_small_img
+
             file_save = path_save_image_combine + "/" + self.name_image + "_" + \
                         self.list_card[idx].split("/")[-1].split(".")[0] + ".jpg"
             cv2.imwrite(file_save, large_image)
