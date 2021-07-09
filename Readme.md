@@ -20,3 +20,10 @@ pip install opencv-python-headless
 
 
 + h, w, c = im.shape
+
+## Add Noise 
+Add noise to card.
+Using technique:
++ salt&peper(add cham cham to image)
++ thay doi sang toi
++ Tao bong mo va add.
