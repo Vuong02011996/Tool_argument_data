@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1204</width>
+    <width>903</width>
     <height>797</height>
    </rect>
   </property>
@@ -14,7 +14,7 @@
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QVBoxLayout" name="verticalLayout_5">
+   <layout class="QHBoxLayout" name="horizontalLayout_11">
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
@@ -24,7 +24,7 @@
        <attribute name="title">
         <string>MainWindow</string>
        </attribute>
-       <layout class="QHBoxLayout" name="horizontalLayout_7">
+       <layout class="QHBoxLayout" name="horizontalLayout_10">
         <item>
          <layout class="QVBoxLayout" name="verticalLayout">
           <item>
@@ -72,6 +72,36 @@
               <property name="text">
                <string>Sổ lượng thẻ</string>
               </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_7">
+            <item>
+             <widget class="QLabel" name="label_select_class">
+              <property name="text">
+               <string>Chọn class</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="comboBox_class">
+              <item>
+               <property name="text">
+                <string>None</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Thẻ HDV</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Không phải thẻ HDV</string>
+               </property>
+              </item>
              </widget>
             </item>
            </layout>
@@ -179,8 +209,8 @@
            <widget class="QLabel" name="label_show">
             <property name="minimumSize">
              <size>
-              <width>481</width>
-              <height>361</height>
+              <width>1280</width>
+              <height>720</height>
              </size>
             </property>
             <property name="styleSheet">
@@ -304,7 +334,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1204</width>
+     <width>903</width>
      <height>22</height>
     </rect>
    </property>

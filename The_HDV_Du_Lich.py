@@ -8,9 +8,13 @@ from PyQt5.QtCore import Qt
 import cv2
 from glob import glob
 import os
-from utils.dataset import scale_bbox_5_point, scale_bbox_xyxy
-from utils.image_process import find_three_point, find_angle_from_three_point, rotate_image
+from utils.dataset import scale_bbox_5_point, scale_bbox_xyxy, scale_bbox_large_image, scale_point_follow_fx_fy, \
+    save_yolo_label_file
+from utils.image_process import find_three_point, find_angle_from_three_point, rotate_image, rotate_box, rotate_bound, \
+    find_distance_two_point, find_bbox_roi_from_bbox_large_image, show_bbox_of_image
 import numpy as np
+from scipy import ndimage
+import time
 
 
 class UI(QMainWindow):
@@ -53,12 +57,22 @@ class UI(QMainWindow):
         self.idx = 0
         self.bbox_idx = []
         self.bbox_no_rotate = []
-        self.angle_rotate = 0
+        self.points1 = (0, 0)
+        self.points2 = (0, 0)
+        self.points3 = (0, 0)
+        self.angle_rotate_scale = 0
 
         # Button load folder card
         self.list_card = []
         self.pushButton_select_folder_card = self.findChild(QPushButton, "pushButton_select_folder_card")
         self.pushButton_select_folder_card.clicked.connect(self.open_folder_card)
+        self.width_card_in_image = 0
+        self.height_card_in_image = 0
+
+        # Select class of card
+        self.comboBox_class = self.findChild(QComboBox, "comboBox_class")
+        self.comboBox_class.currentTextChanged.connect(self.combo_class_selected)
+        self.class_card = None
 
         # Button ghep the : save bbox and idx image show to folder data need training
         self.pushButton_paster_card = self.findChild(QPushButton, "pushButton_paster_card")
@@ -119,7 +133,6 @@ class UI(QMainWindow):
         return pix_map, arr_image, name_image
 
     def get_pixel(self, event):
-        print(self.bbox_idx[self.idx])
         if len(self.bbox_idx[self.idx]) < 5:
             x = event.pos().x()
             y = event.pos().y()
@@ -136,28 +149,44 @@ class UI(QMainWindow):
                         y4 = bbox_xyxy[3][1] - y_extra
                         self.bbox_idx[self.idx].append((x4, y4))
 
-                        self.bbox_no_rotate = [min(bbox_xyxy[1][0], bbox_xyxy[4][0]), min(bbox_xyxy[1][1], bbox_xyxy[2][1]),
-                                               max(bbox_xyxy[2][0], bbox_xyxy[3][0]), max(bbox_xyxy[3][1], bbox_xyxy[4][1])]
+                        self.width_card_in_image = find_distance_two_point(self.bbox_idx[self.idx][1],
+                                                                      self.bbox_idx[self.idx][2])
+                        self.height_card_in_image = find_distance_two_point(self.bbox_idx[self.idx][3],
+                                                                       self.bbox_idx[self.idx][2])
+                        if self.width_card_in_image < self.height_card_in_image:
+                            self.bbox_idx[self.idx] = [self.idx]
+                            self.pix, self.arr_image, self.name_image = self.show_image_to_qlabel(self.list_image_show[self.idx])
+                            # self.bbox_idx = list([self.idx])
 
-                        self.draw_line(bbox_xyxy[1][0], bbox_xyxy[1][1], bbox_xyxy[2][0], bbox_xyxy[2][1])  # |
-                        self.draw_line(bbox_xyxy[2][0], bbox_xyxy[2][1], bbox_xyxy[3][0], bbox_xyxy[3][1])  # |_
-                        self.draw_line(bbox_xyxy[3][0], bbox_xyxy[3][1], bbox_xyxy[4][0], bbox_xyxy[4][1])  # |_|
-                        self.draw_line(bbox_xyxy[4][0], bbox_xyxy[4][1], bbox_xyxy[1][0], bbox_xyxy[1][1])  # |_|
+                        else:
+                            self.bbox_no_rotate = [min(bbox_xyxy[1][0], bbox_xyxy[4][0]), min(bbox_xyxy[1][1], bbox_xyxy[2][1]),
+                                                   max(bbox_xyxy[2][0], bbox_xyxy[3][0]), max(bbox_xyxy[3][1], bbox_xyxy[4][1])]
 
-                        # draw line bbox no rotate
-                        self.draw_line(self.bbox_no_rotate[0], self.bbox_no_rotate[1], self.bbox_no_rotate[2], self.bbox_no_rotate[1])
-                        self.draw_line(self.bbox_no_rotate[2], self.bbox_no_rotate[1], self.bbox_no_rotate[2], self.bbox_no_rotate[3])
-                        self.draw_line(self.bbox_no_rotate[2], self.bbox_no_rotate[3], self.bbox_no_rotate[0], self.bbox_no_rotate[3])
-                        self.draw_line(self.bbox_no_rotate[0], self.bbox_no_rotate[3], self.bbox_no_rotate[0], self.bbox_no_rotate[1])
+                            self.draw_line(bbox_xyxy[1][0], bbox_xyxy[1][1], bbox_xyxy[2][0], bbox_xyxy[2][1])  # |
+                            self.draw_line(bbox_xyxy[2][0], bbox_xyxy[2][1], bbox_xyxy[3][0], bbox_xyxy[3][1])  # |_
+                            self.draw_line(bbox_xyxy[3][0], bbox_xyxy[3][1], bbox_xyxy[4][0], bbox_xyxy[4][1])  # |_|
+                            self.draw_line(bbox_xyxy[4][0], bbox_xyxy[4][1], bbox_xyxy[1][0], bbox_xyxy[1][1])  # |_|
 
-                        # find angle rotate
-                        a, b, c = find_three_point(self.bbox_no_rotate, [bbox_xyxy[1][0], bbox_xyxy[1][1],
-                                                                         bbox_xyxy[4][0], bbox_xyxy[4][1]])
-                        self.draw_point(a[0], a[1], color=Qt.blue)  # a xanh duong
-                        self.draw_point(b[0], b[1], color=Qt.yellow)  # b vang
-                        self.draw_point(c[0], c[1], color=Qt.green)  # c xanh la
-                        self.angle_rotate = find_angle_from_three_point(a, b, c)
-                        print(self.angle_rotate)
+                            # draw line bbox no rotate
+                            self.draw_line(self.bbox_no_rotate[0], self.bbox_no_rotate[1], self.bbox_no_rotate[2], self.bbox_no_rotate[1])
+                            self.draw_line(self.bbox_no_rotate[2], self.bbox_no_rotate[1], self.bbox_no_rotate[2], self.bbox_no_rotate[3])
+                            self.draw_line(self.bbox_no_rotate[2], self.bbox_no_rotate[3], self.bbox_no_rotate[0], self.bbox_no_rotate[3])
+                            self.draw_line(self.bbox_no_rotate[0], self.bbox_no_rotate[3], self.bbox_no_rotate[0], self.bbox_no_rotate[1])
+
+                            # find three points
+                            self.points2 = self.bbox_idx[self.idx][1]
+                            self.points1 = self.bbox_idx[self.idx][2]
+                            self.points3 = (self.points2[0] + 100, self.points2[1])
+                            # a, b, c = find_three_point(self.bbox_no_rotate, [bbox_xyxy[1][0], bbox_xyxy[1][1],
+                            #                                                  bbox_xyxy[4][0], bbox_xyxy[4][1]])
+                            self.draw_point(self.points1[0], self.points1[1], color=Qt.blue)  # a xanh duong
+                            self.draw_point(self.points1[0], self.points2[1], color=Qt.yellow)  # b vang
+                            self.draw_point(self.points3[0], self.points3[1], color=Qt.green)  # c xanh la
+                            # self.angle_rotate_scale = find_angle_from_three_point(a, b, c)
+                            # a_scale = [a[0] * self.ratio_width, a[1] * self.ratio_height]
+                            # b_scale = [b[0] * self.ratio_width, b[1] * self.ratio_height]
+                            # c_scale = [c[0] * self.ratio_width, c[1] * self.ratio_height]
+                            # self.angle_rotate_scale = find_angle_from_three_point(a_scale, b_scale, c_scale)
 
             else:
                 self.bbox_idx[self.idx].append((x, y))
@@ -197,8 +226,6 @@ class UI(QMainWindow):
             self.label_process.setText("{}/{}".format(self.idx, len(self.list_image_show)))
             self.bbox_idx.append([self.idx])
 
-            print(self.list_image_show)
-
     def open_folder_card(self):
         dir_ = QFileDialog.getExistingDirectory(None, 'Select project folder:', '/home/',
                                                 QFileDialog.ShowDirsOnly)
@@ -207,7 +234,6 @@ class UI(QMainWindow):
         if len(self.list_card) == 0:
             QMessageBox.warning(self, "Warning",
                                 "Directory is no any card")
-            sys.exit(0)
         else:
             self.label_num_card.setText(str(len(self.list_card)) + " thẻ")
             print(self.list_card)
@@ -238,11 +264,10 @@ class UI(QMainWindow):
         self.bbox_idx.append([self.idx])
 
     def paster_card_to_image(self):
-        if len(self.bbox_idx[self.idx]) > 0:
+        if len(self.bbox_idx[self.idx]) > 1:
             print(self.bbox_idx)
             if len(self.list_card) > 0:
                 self.paste_and_save_image()
-
         else:
             QMessageBox.warning(self, "Warning",
                                 "No bounding box in image to paster card")
@@ -254,55 +279,106 @@ class UI(QMainWindow):
             os.mkdir(path_save_image_combine)
         print(path_save_image_combine)
 
+        start_time = time.time()
         for idx in range(len(self.list_card)):
             small_image = cv2.imread(self.list_card[idx])
+            large_image = self.img_org
             if len(self.bbox_idx[self.idx]) != 5:
                 QMessageBox.warning(self, "Warning",
                                     "No bbox in image")
                 sys.exit(0)
-            # rotated image
-            rotated_img = rotate_image(image_arr=small_image, angle=self.angle_rotate)
-            # scale bbox no rotate to size image origin
+            # # rotated image
+            # find width , height of card in origin image
+
+            width_card_in_image = self.width_card_in_image * self.ratio_width
+            height_card_in_image = self.height_card_in_image * self.ratio_height
+            width_card_rotated = small_image.shape[1]
+            height_card_rotated = small_image.shape[0]
+            fx = width_card_in_image / width_card_rotated
+            fy = height_card_in_image / height_card_rotated
+
+            # scale point draw to size origin image
+            points1_scale = scale_point_follow_fx_fy(self.points1, self.ratio_width, self.ratio_height)
+            points2_scale = scale_point_follow_fx_fy(self.points2, self.ratio_width, self.ratio_height)
+            points3_scale = scale_point_follow_fx_fy(self.points3, self.ratio_width, self.ratio_height)
+            # scale point to size of card image
+            points1_scale = scale_point_follow_fx_fy(points1_scale, fx, fy)
+            points2_scale = scale_point_follow_fx_fy(points2_scale, fx, fy)
+            points3_scale = scale_point_follow_fx_fy(points3_scale, fx, fy)
+            self.angle_rotate_scale = find_angle_from_three_point(points1_scale, points2_scale, points3_scale)
+
+            rotated_img = ndimage.rotate(small_image, angle=self.angle_rotate_scale)
+            # # scale bbox no rotate to size image origin
             bbox_no_rotate_org = scale_bbox_xyxy(self.bbox_no_rotate, self.ratio_width, self.ratio_height)
-            # scale card to size of bbox no rotate
-            width_small = bbox_no_rotate_org[2] - bbox_no_rotate_org[0]
-            height_small = bbox_no_rotate_org[3] - bbox_no_rotate_org[1]
-            rotated_small_img = cv2.resize(rotated_img, (width_small, height_small), interpolation=cv2.INTER_AREA)
-            large_image = self.img_org
+            # # scale card to size of bbox no rotate
+            width_bbox_no_rotate_org = bbox_no_rotate_org[2] - bbox_no_rotate_org[0]
+            height_bbox_no_rotate_org = bbox_no_rotate_org[3] - bbox_no_rotate_org[1]
+            fx1 = width_bbox_no_rotate_org / rotated_img.shape[1]
+            fy1 = height_bbox_no_rotate_org / rotated_img.shape[0]
+            rotated_small_img = cv2.resize(rotated_img, (width_bbox_no_rotate_org, height_bbox_no_rotate_org), interpolation=cv2.INTER_AREA)
+            # Create mask with color black
+            alpha_img = np.zeros((height_bbox_no_rotate_org, width_bbox_no_rotate_org), np.uint8)
 
-            alpha_img = np.zeros((width_small, height_small, 1))
-            # tu_giac = np.array([[[240, 130], [380, 230], [190, 280]]], np.int32)
-            tu_giac = np.array([self.bbox_idx[self.idx][1], self.bbox_idx[self.idx][2], self.bbox_idx[self.idx][3], self.bbox_idx[self.idx][4]], dtype=np.int32)
-            tu_giac = tu_giac.reshape((-1, 1, 2))
-            alpha_img = cv2.polylines(alpha_img, [tu_giac], True, (255, 255, 255), thickness=-1)
+            # Find bounding box card after rotated
+            # # scale bbox in size tool to size origin image
+            # box_large_image = scale_bbox_large_image(self.bbox_idx[self.idx][1:], self.ratio_width, self.ratio_height)
+            # offset = [(bbox_no_rotate_org[0], bbox_no_rotate_org[1])]
+            # # scale bbox in origin image to bbox rotated
+            # new_bb = find_bbox_roi_from_bbox_large_image(offset, box_large_image)
 
-            alpha_s = cv2.blur(alpha_img, (3, 3))
-
-            # rotated_small_img = cv2.cvtColor(rotated_small_img, cv2.COLOR_RGB2RGBA)
-            # alpha_s = rotated_small_img[:, :, 3] / 255.0
+            bbox_card_no_rotate = [(0, 0), (width_card_rotated, 0), (width_card_rotated, height_card_rotated), (0, height_card_rotated)]
+            (cx, cy) = (width_card_rotated // 2, height_card_rotated // 2)
+            new_bb1 = rotate_box(bbox_card_no_rotate, cx, cy, height_card_rotated, width_card_rotated, self.angle_rotate_scale)
+            new_bb1 = scale_bbox_large_image(new_bb1, fx1, fy1)
+            tu_giac = np.array(new_bb1, dtype=np.int32)
+            # fill bounding box card of mask by color white
+            alpha_s = cv2.fillPoly(alpha_img, [tu_giac], (255, 255, 255))
+            alpha_s = cv2.blur(alpha_s, (3, 3))
+            alpha_s = alpha_s.astype(float) / 255.0
             alpha_l = 1.0 - alpha_s
-
+            # plt.imshow(alpha_s)
+            # plt.imshow(alpha_l)
+            # plt.show()
+            # paste image card to bbox no rotate image origin
+            roi_img = large_image[bbox_no_rotate_org[1]:bbox_no_rotate_org[3], bbox_no_rotate_org[0]:bbox_no_rotate_org[2]]
             for c in range(0, 3):
-                large_image[bbox_no_rotate_org[1]:bbox_no_rotate_org[3], bbox_no_rotate_org[0]:bbox_no_rotate_org[2], c] = (alpha_s * rotated_small_img[:, :, c] +
-                                          alpha_l * large_image[bbox_no_rotate_org[1]:bbox_no_rotate_org[3], bbox_no_rotate_org[0]:bbox_no_rotate_org[2], c])
+                roi_img[:, :, c] = roi_img[:, :, c] * alpha_l + rotated_small_img[:, :, c] * alpha_s
 
-            # large_image[bbox_no_rotate_org[1]:bbox_no_rotate_org[3], bbox_no_rotate_org[0]:bbox_no_rotate_org[2]] = rotated_small_img
-
-            file_save = path_save_image_combine + "/" + self.name_image + "_" + \
-                        self.list_card[idx].split("/")[-1].split(".")[0] + ".jpg"
+            name_file_save = path_save_image_combine + "/" + self.name_image + "_" + \
+                        self.list_card[idx].split("/")[-1].split(".")[0]
+            file_save = name_file_save + ".jpg"
             cv2.imwrite(file_save, large_image)
 
+            # write file bounding box
             """
-            Each row is class x_center y_center width height format.
-            Box coordinates must be in normalized xywh format (from 0 - 1). 
-            If your boxes are in pixels, divide x_center and width by image width, and y_center and height by image height.
-            """
-            # while True:
-            #     cv2.imshow("image", large_image)
-            #     key = cv2.waitKey(10) & 0xFF
-            #     if key == ord("q"):
-            #         break
+           Each row is class x_center y_center width height format.
+           Box coordinates must be in normalized xywh format (from 0 - 1). 
+           If your boxes are in pixels, divide x_center and width by image width, and y_center and height by image height.
+           """
+            x_center = (width_bbox_no_rotate_org / 2) + bbox_no_rotate_org[0]
+            y_center = (height_bbox_no_rotate_org / 2) + bbox_no_rotate_org[1]
+            w = width_bbox_no_rotate_org
+            h = height_bbox_no_rotate_org
+            # normalize to 0 - 1
+            x_center = x_center / self.width_img_org
+            y_center = y_center / self.height_img_org
+            w = w / self.width_img_org
+            h = h / self.height_img_org
 
+            # show_bbox_of_image(self.img_org, bbox_no_rotate_org)
+            save_yolo_label_file(name_file_save, self.class_card, x_center, y_center, w, h)
+        print("time ", time.time() - start_time)
+        print("Done image id", self.idx)
+
+    def combo_class_selected(self):
+        item = self.comboBox_class.currentText()
+        if item == "Thẻ HDV":
+            self.class_card = 0
+        elif item == "Không phải thẻ HDV":
+            self.class_card = 1
+        else:
+            QMessageBox.warning(self, "Warning",
+                                "Please select class of card")
     # ----------------------------------------------VIEW RESULT----------------------------------------------------
     """Phan result"""
     def select_folder_image_result(self):
